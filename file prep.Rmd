@@ -1,0 +1,275 @@
+---
+title: "Prep"
+author: "Mike Malloy"
+date: "5/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+
+req_pkg <- c("tidyverse", "httr", "janitor", "readxl", "tidycensus", "sf", "stringi", "leaflet")
+
+check.and.install.Package<- function(package_name){
+  
+        if(!package_name %in% installed.packages()) {
+           install.packages(package_name)
+        }
+}
+
+for (i in req_pkg) {
+  
+  check.and.install.Package(i)
+  
+  library(i, character.only = TRUE)
+  
+}
+
+```
+
+## Read in Excel file with Fiscal Disparities from 2019
+```{r}
+
+## assign label to URL for the dataset
+url <- "https://metrocouncil.org/Communities/Publications-And-Resources/Fiscal-Disparities-Summary-Data-2014.aspx"
+
+## use GET function from httr package to retrieve URL
+## will store as a temporary file; setting file extension ensures file is read in correctly
+GET(url, write_disk(tf <- tempfile(fileext = ".xlsx")))
+
+## Use read_excel to read file in as data frame
+## After row 194, the sheet has summary tables with different column structure. Stop reading in data there (193 in code bc skipping row 1 entirely)
+fd19 <- read_excel(tf, sheet = "FD summary data 2021", col_names = F, skip = 1, n_max = 193)
+
+```
+
+
+
+## Clean Fiscal Disparities file
+
+Reformat and clean the column names
+```{r}
+
+## Need to clean the column names. Must collapse columns 1 through 4 into a single string
+cols <- apply(fd19[1:4,], 2, paste, collapse = "")
+
+cols <- gsub("NA", "", cols)
+
+## two records have the page title cell combined, delete those portions
+cols[4] <- "County"
+
+cols[6] <- "Contribution Tax Base"
+
+## rename the city field, we'll use that to join later and it's very long
+cols[5] <- "Community"
+
+## assign column names
+colnames(fd19) <- cols
+
+## simple clean to remove white space, make all lower case
+fd19 <- clean_names(fd19)
+
+## remove rows 1:4 now
+fd19 <- fd19[5:193,]
+
+```
+
+Clean community names so they'll match later
+```{r}
+
+## A few of these say '(combined)' - we want to remove this
+
+fd19 <- fd19 %>%
+  mutate(community = gsub(" \\(combined\\)", "", community))
+
+```
+
+Make columns numeric
+```{r}
+
+fd19 <- fd19 %>%
+  mutate(across(c(6:24), as.numeric))
+
+```
+
+
+## Calculate percentage change in CI tax base after FD transfer
+
+```{r}
+
+fd19 <- fd19 %>%
+  mutate(pct_change_ci_base = round(net_change_tax_base_payable_2021/contribution_tax_base*100, 2))
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+
+## Check  
+
+fd19 %>%
+  select(community,
+         county,
+         net_change_tax_base_payable_2021, 
+         contribution_tax_base,
+         distribution_tax_base_payable_2021,
+         pct_change_ci_base) %>%
+  View()
+
+```
+
+
+## Pull in ACS data on median household income for communities in the Twin Cities metro area. 
+
+Using ACS 5-year estimates from 2018. Variables are found by searching the ACS API variables here: https://api.census.gov/data/2018/acs/acs5/profile/variables.html
+
+```{r}
+
+my_api_key = ("73f7f4579cc4b9b6ef927d785abf0dee32ccb86a")
+
+tc_acs <- get_acs(geography = "county subdivision",
+                  variables = c("DP03_0062E"),
+                  state = "MN",
+                  geometry = TRUE,
+                  key = my_api_key)
+
+```
+
+## Clean ACS file
+
+Split the name field into city/town/county/state columns so we can match 
+```{r}
+
+## just city/county/state at first, separated at comma
+tc_acs <- tc_acs %>%
+  separate(col = NAME, into = c("community", "county", "state"), sep = ",") %>%
+  mutate(county = trimws(county)) %>%
+  select(-state)
+
+## now separate community name from the city/town/village descriptor
+tc_acs <- tc_acs %>%
+  mutate(community_name = substr(community, 1, stri_locate_last_fixed(community, " ")-1),
+         tcv = substr(community, stri_locate_last_fixed(community, " ")+1, nchar(community))) %>%
+  select(-community)
+
+## If tcv value = "township", I want to add " Twp." to community name, so it'll match the fd19.
+tc_acs <- tc_acs %>%
+  mutate(community_name = if_else(tcv == "township", paste(community_name, "Twp."), community_name))
+
+## Confirm I will be able to join on this field eventually
+
+fd19 %>% filter(!community %in% tc_acs$community)
+
+## They don't all match but the ones that don't make sense bc not census areas (and barely partaking in FD): airports, state fairgrounds, Fort Snelling.
+
+```
+
+Rename estimate field, just so it's more clear
+```{r}
+
+tc_acs <- tc_acs %>%
+  rename(med_income = estimate)
+
+```
+
+
+
+## Combine into one base file
+
+Join ACS onto the trimmed FD table
+```{r}
+
+base <- fd19 %>%
+  mutate(county = paste(county, "County")) %>% ## so that it matches with ACS, which adds word "county" to each value
+  inner_join(tc_acs, by = c("community" = "community_name", "county" = "county")) %>%
+  st_sf() %>% ## makes dataframe an sf object which preserves geometry from ACS file; needed for mapping
+  st_transform(crs = 4326)
+
+```
+
+
+## Prep for mapping
+
+Examine variables to determine map scales
+
+```{r}
+
+summary(base$pct_change_ci_base)
+
+boxplot(base$pct_change_ci_base)
+
+## Alright so some negative, most positive but below 100, some way over 100
+## Want to capture net loser/net gainer dynamic, and also highlight the real outliers.
+## So I think best categories are <0, 0 - 100, and >100. 
+## Will do a diverging gradient palette with more detail for first map.
+
+summary(base$med_income)
+
+boxplot(base$med_income)
+
+## Pretty tight around median...
+
+## Actually, could use federal poverty level. Have done that before. At like 200%, 400%, >400%.
+## nope tried (fam of 4 - 52400, and 104800), too few below poverty level. Just do some neat numbers roughly around there?
+tabyl(base$med_income < 60000)
+tabyl(base$med_income < 120000)
+tabyl(base$med_income < 100000)
+
+## 60000 and 100000 works
+
+```
+
+Define categories for bivariate map
+```{r}
+
+base <- base %>%
+  mutate(ci_base_change_cat = case_when(pct_change_ci_base < 0 ~ "C",
+                                        pct_change_ci_base >= 0 & pct_change_ci_base <= 100 ~ "B",
+                                        pct_change_ci_base > 100 ~ "A",
+                                        TRUE ~ NA_character_),
+         med_income_cat = case_when(med_income < 60000 ~ "1",
+                                    med_income >= 60000 & med_income < 100000 ~ "2",
+                                    med_income >= 100000 ~ "3",
+                                    TRUE ~ NA_character_),
+         bivar_ci_medinc = ifelse(!is.na(med_income_cat) & 
+                                  !is.na(ci_base_change_cat) &
+                                   excludedfrom_fd_yes_no == "N", paste0(ci_base_change_cat, med_income_cat), NA))
+
+## Check
+tabyl(base$ci_base_change_cat)
+tabyl(base$med_income_cat)
+tabyl(base$bivar_ci_medinc)
+
+```
+
+
+Define palettes
+
+Diverging palette for CI contribution; need to custom make scale because the values are skewed (can't go lower than 100 in negative direction; going well over 100 in positive numbers) and R will set neutral color at midpoint of range, not at 0.
+
+```{r}
+
+## create special column to flag anyone whose change in ci tax base pct was > 500%, easier to map
+base$pct_change_ci_simpl = if_else(base$pct_change_ci_base > 500, 500, base$pct_change_ci_base)
+
+ci_bin_neg <- seq(-100, -0.01, by = 20)
+ci_bin_pos <- seq(.01, 501, by = 100)
+ci_bin_breaks <- c(ci_bin_neg, 0, ci_bin_pos)
+
+ci_bin_names <- c("-100% to -80%", "-80% to -60%","-60% to -40%", "-40% to -20%", "-20% to 0%", "0%", "0% to 100%", "100% to 200%", "200% to 300%", "300% to 400%", "400%+")
+
+base$ci_pct_change_bin <- cut(base$pct_change_ci_simpl, breaks = ci_bin_breaks)
+
+levels(base$ci_pct_change_bin) <- ci_bin_names
+
+```
+
+save out
+```{r}
+
+saveRDS(base, file = "C:/Users/mmalloy/Documents/docs/fiscal_disparities_formatted.rds")
+
+```
+
