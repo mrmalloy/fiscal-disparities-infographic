@@ -1,6 +1,6 @@
 
 # Load data
-base <- readRDS("C:/Users/mmalloy/Documents/docs/fiscal_disparities_formatted.rds")
+base <- readRDS("fiscal_disparities_formatted.rds")
 
 # map 2 bivariate palette
 bivar_cols <- c("#caeed1", "#8edb9d", "#52c769", "#dde0fd", "#959cf7", "#5561f2", "#fedae4", "#fd95b4", "#fa1459")
