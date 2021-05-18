@@ -13,7 +13,7 @@ pal2 <- colorFactor(bivar_cols, base$bivar_ci_medinc)
 
 # Make map labels
 
-mapLabels <- sprintf("<strong>%s</strong><br/>County: %s<br/>Community Type: %s<br/>Change in CI Tax Base: %g&#37<br/> Median Income: %s", base$community, sub(" .*", "", base$county), base$community_designation_thrive_msp2040, base$net_change_per_capita, format_dollars(base$med_income)) %>%
+mapLabels <- sprintf("<strong>%s</strong><br/>County: %s<br/>Community Type: %s<br/>Change in CI Tax Base: %g&#37<br/> Median Income: %s", base$community, sub(" .*", "", base$county), base$community_designation_thrive_msp2040, base$pct_change_ci_base, format_dollars(base$med_income)) %>%
   lapply(htmltools::HTML)
 
 # Import picture of legend I had to make manually
