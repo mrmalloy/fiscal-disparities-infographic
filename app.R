@@ -21,7 +21,7 @@ for (i in req_pkg) {
 
 
 # Source
-source("C:/Users/mmalloy/Documents/docs/helpers.R")
+source("helpers.R")
 
 
 # UI
