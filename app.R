@@ -4,7 +4,7 @@ library(leaflet)
 library(shiny)
 library(priceR)
 library(plotly)
-library(leafmem)
+library(leafem)
 
 
 # Source
