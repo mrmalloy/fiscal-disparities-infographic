@@ -1,23 +1,3 @@
-# Libraries
-## Check for required libraries, install if missing
-
-req_pkg <- c("tidyverse", "leaflet", "shiny", "priceR", "plotly", "leafem")
-
-check.and.install.Package<- function(package_name){
-  
-  if(!package_name %in% installed.packages()) {
-    install.packages(package_name)
-  }
-}
-
-for (i in req_pkg) {
-  
-  check.and.install.Package(i)
-  
-  library(i, character.only = TRUE)
-  
-}
-
 
 
 # Source
