@@ -1,13 +1,10 @@
-options(encoding = "UTF-8")
-
-# load packages
-req_pkg <- c("tidyverse", "leaflet", "shiny", "priceR", "plotly", "leafem")
-
-for (i in req_pkg) {
-
-  library(i, character.only = TRUE)
-
-}
+# load libraries
+library(tidyverse)
+library(leaflet)
+library(shiny)
+library(priceR)
+library(plotly)
+library(leafmem)
 
 
 # Source
