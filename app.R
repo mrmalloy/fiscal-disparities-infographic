@@ -1,7 +1,16 @@
+# load packages
+req_pkg <- c("tidyverse", "leaflet", "shiny", "priceR", "plotly", "leafem")
+
+for (i in req_pkg) {
+
+  library(i, character.only = TRUE)
+
+}
 
 
 # Source
 source("helpers.R")
+
 
 
 # UI
