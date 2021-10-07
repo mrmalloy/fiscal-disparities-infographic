@@ -1,3 +1,5 @@
+options(encoding = "UTF-8")
+
 # load packages
 req_pkg <- c("tidyverse", "leaflet", "shiny", "priceR", "plotly", "leafem")
 
