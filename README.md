@@ -8,3 +8,4 @@ In R, use the following commands:<br>
 <code> library(shiny) </code><br>
 <code> runGitHub("fiscal-disparities-infographic", "mrmalloy", ref = "main") </code> <br>
 
+Live app is also available here: https://mrmalloy.shinyapps.io/fiscal-disparities-infographic/
